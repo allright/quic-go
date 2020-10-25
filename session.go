@@ -114,13 +114,12 @@ type errCloseForRecreating struct {
 	nextVersion      protocol.VersionNumber
 }
 
-func (errCloseForRecreating) Error() string {
+func (e errCloseForRecreating) Error() string {
 	return "closing session in order to recreate it"
 }
 
-func (errCloseForRecreating) Is(target error) bool {
-	_, ok := target.(errCloseForRecreating)
-	return ok
+func (e errCloseForRecreating) Is(target error) bool {
+	return errors.As(target, &e)
 }
 
 // A Session is a QUIC session
@@ -732,7 +731,7 @@ func (s *session) handlePacketImpl(rp *receivedPacket) bool {
 		if err != nil {
 			if s.tracer != nil {
 				dropReason := logging.PacketDropHeaderParseError
-				if err == wire.ErrUnsupportedVersion {
+				if errors.Is(err, wire.ErrUnsupportedVersion) {
 					dropReason = logging.PacketDropUnsupportedVersion
 				}
 				s.tracer.DroppedPacket(logging.PacketTypeNotDetermined, protocol.ByteCount(len(data)), dropReason)
@@ -808,20 +807,20 @@ func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /
 
 	packet, err := s.unpacker.Unpack(hdr, p.rcvTime, p.data)
 	if err != nil {
-		switch err {
-		case handshake.ErrKeysDropped:
+		switch {
+		case errors.Is(err, handshake.ErrKeysDropped):
 			if s.tracer != nil {
 				s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), p.Size(), logging.PacketDropKeyUnavailable)
 			}
 			s.logger.Debugf("Dropping %s packet (%d bytes) because we already dropped the keys.", hdr.PacketType(), p.Size())
-		case handshake.ErrKeysNotYetAvailable:
+		case errors.Is(err, handshake.ErrKeysNotYetAvailable):
 			// Sealer for this encryption level not yet available.
 			// Try again later.
 			wasQueued = true
 			s.tryQueueingUndecryptablePacket(p, hdr)
-		case wire.ErrInvalidReservedBits:
+		case errors.Is(err, wire.ErrInvalidReservedBits):
 			s.closeLocal(qerr.NewError(qerr.ProtocolViolation, err.Error()))
-		case handshake.ErrDecryptionFailed:
+		case errors.Is(err, handshake.ErrDecryptionFailed):
 			// This might be a packet injected by an attacker. Drop it.
 			if s.tracer != nil {
 				s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), p.Size(), logging.PacketDropPayloadDecryptError)
@@ -1311,8 +1310,7 @@ func (s *session) handleCloseError(closeErr closeError) {
 	}
 
 	var quicErr *qerr.QuicError
-	var ok bool
-	if quicErr, ok = closeErr.err.(*qerr.QuicError); !ok {
+	if !errors.As(closeErr.err, &quicErr) {
 		quicErr = qerr.ToQuicError(closeErr.err)
 	}
 

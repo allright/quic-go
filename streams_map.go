@@ -37,7 +37,7 @@ type streamOpenErr struct{ error }
 
 var _ net.Error = &streamOpenErr{}
 
-func (e streamOpenErr) Temporary() bool { return e.error == errTooManyOpenStreams }
+func (e streamOpenErr) Temporary() bool { return errors.Is(e.error, errTooManyOpenStreams) }
 func (streamOpenErr) Timeout() bool     { return false }
 
 // errTooManyOpenStreams is used internally by the outgoing streams maps.

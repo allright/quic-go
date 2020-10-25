@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"hash"
 	"log"
@@ -293,7 +294,8 @@ func (h *packetHandlerMap) listen() {
 	defer close(h.listening)
 	for {
 		p, err := h.conn.ReadPacket()
-		if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
+		var nerr net.Error
+		if errors.As(err, &nerr) && nerr.Temporary() {
 			h.logger.Debugf("Temporary error reading from conn: %w", err)
 			continue
 		}

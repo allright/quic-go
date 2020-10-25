@@ -31,7 +31,7 @@ func newFrameSorter() *frameSorter {
 
 func (s *frameSorter) Push(data []byte, offset protocol.ByteCount, doneCb func()) error {
 	err := s.push(data, offset, doneCb)
-	if err == errDuplicateStreamData {
+	if errors.Is(err, errDuplicateStreamData) {
 		if doneCb != nil {
 			doneCb()
 		}

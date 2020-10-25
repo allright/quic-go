@@ -20,6 +20,7 @@ linters:
     - asciicheck
     - deadcode
     - depguard
+    - errorlint
     - exhaustive
     - exportloopref
     - goconst

@@ -2,6 +2,7 @@ package quic
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,12 +21,10 @@ type headerParseError struct {
 }
 
 func (e *headerParseError) Is(err error) bool {
-	_, ok := err.(*headerParseError)
-	return ok
+	return errors.As(err, &e)
 }
 
 func (e *headerParseError) Unwrap() error {
-	fmt.Println("unwrap")
 	return e.err
 }
 
@@ -128,7 +127,7 @@ func (u *packetUnpacker) unpackLongHeaderPacket(opener handshake.LongHeaderOpene
 	// If the reserved bits are set incorrectly, we still need to continue unpacking.
 	// This avoids a timing side-channel, which otherwise might allow an attacker
 	// to gain information about the header encryption.
-	if parseErr != nil && parseErr != wire.ErrInvalidReservedBits {
+	if parseErr != nil && !errors.Is(parseErr, wire.ErrInvalidReservedBits) {
 		return nil, nil, parseErr
 	}
 	extHdrLen := extHdr.ParsedLen()
@@ -152,7 +151,7 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	// If the reserved bits are set incorrectly, we still need to continue unpacking.
 	// This avoids a timing side-channel, which otherwise might allow an attacker
 	// to gain information about the header encryption.
-	if parseErr != nil && parseErr != wire.ErrInvalidReservedBits {
+	if parseErr != nil && !errors.Is(parseErr, wire.ErrInvalidReservedBits) {
 		return nil, nil, parseErr
 	}
 	extHdrLen := extHdr.ParsedLen()
@@ -169,7 +168,7 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 // The error is either nil, a wire.ErrInvalidReservedBits or of type headerParseError.
 func (u *packetUnpacker) unpackHeader(hd headerDecryptor, hdr *wire.Header, data []byte) (*wire.ExtendedHeader, error) {
 	extHdr, err := unpackHeader(hd, hdr, data, u.version)
-	if err != nil && err != wire.ErrInvalidReservedBits {
+	if err != nil && !errors.Is(err, wire.ErrInvalidReservedBits) {
 		return nil, &headerParseError{err: err}
 	}
 	extHdr.PacketNumber = protocol.DecodePacketNumber(
@@ -200,7 +199,7 @@ func unpackHeader(hd headerDecryptor, hdr *wire.Header, data []byte, version pro
 	)
 	// 3. parse the header (and learn the actual length of the packet number)
 	extHdr, parseErr := hdr.ParseExtended(r, version)
-	if parseErr != nil && parseErr != wire.ErrInvalidReservedBits {
+	if parseErr != nil && !errors.Is(parseErr, wire.ErrInvalidReservedBits) {
 		return nil, parseErr
 	}
 	// 4. if the packet number is shorter than 4 bytes, replace the remaining bytes with the copy we saved earlier

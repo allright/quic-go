@@ -248,7 +248,7 @@ func (p *packetPacker) PackConnectionClose(quicErr *qerr.QuicError) (*coalescedP
 			}
 			sealer = s
 		}
-		if err == handshake.ErrKeysNotYetAvailable || err == handshake.ErrKeysDropped {
+		if errors.Is(err, handshake.ErrKeysNotYetAvailable) || errors.Is(err, handshake.ErrKeysDropped) {
 			continue
 		}
 		if err != nil {
@@ -356,7 +356,7 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 	}
 	// Try packing an Initial packet.
 	contents, err := p.maybeAppendCryptoPacket(buffer, maxPacketSize, protocol.EncryptionInitial)
-	if err != nil && err != handshake.ErrKeysDropped {
+	if err != nil && !errors.Is(err, handshake.ErrKeysDropped) {
 		return nil, err
 	}
 	if contents != nil {
@@ -368,7 +368,7 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 
 	// Add a Handshake packet.
 	contents, err = p.maybeAppendCryptoPacket(buffer, maxPacketSize, protocol.EncryptionHandshake)
-	if err != nil && err != handshake.ErrKeysDropped && err != handshake.ErrKeysNotYetAvailable {
+	if err != nil && !errors.Is(err, handshake.ErrKeysDropped) && !errors.Is(err, handshake.ErrKeysNotYetAvailable) {
 		return nil, err
 	}
 	if contents != nil {
@@ -380,7 +380,7 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 
 	// Add a 0-RTT / 1-RTT packet.
 	contents, err = p.maybeAppendAppDataPacket(buffer, maxPacketSize)
-	if err == handshake.ErrKeysNotYetAvailable {
+	if errors.Is(err, handshake.ErrKeysNotYetAvailable) {
 		return packet, nil
 	}
 	if err != nil {
