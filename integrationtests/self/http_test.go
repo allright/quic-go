@@ -16,6 +16,7 @@ import (
 
 	quic "github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
+	"github.com/lucas-clemente/quic-go/internal/handshake"
 	"github.com/lucas-clemente/quic-go/internal/protocol"
 	"github.com/lucas-clemente/quic-go/internal/testdata"
 
@@ -79,7 +80,9 @@ var _ = Describe("HTTP tests", func() {
 			},
 			QuicConfig: getQuicConfig(&quic.Config{Versions: versions}),
 		}
+	})
 
+	JustBeforeEach(func() {
 		addr, err := net.ResolveUDPAddr("udp", "0.0.0.0:0")
 		Expect(err).NotTo(HaveOccurred())
 		conn, err := net.ListenUDP("udp", addr)
@@ -98,6 +101,70 @@ var _ = Describe("HTTP tests", func() {
 	AfterEach(func() {
 		Expect(server.Close()).NotTo(HaveOccurred())
 		Eventually(stoppedServing).Should(BeClosed())
+	})
+
+	Context("ALPN selection", func() {
+		versions := []protocol.VersionNumber{protocol.VersionDraft29, protocol.VersionDraft32}
+		origSupportedVersions := protocol.SupportedVersions
+
+		for i := range versions {
+			ver := versions[i]
+
+			Context(fmt.Sprintf("with QUIC version %s", ver), func() {
+				alpn := "h3-29"
+				//nolint:exhaustive
+				if ver == protocol.VersionDraft32 {
+					alpn = "h3-32"
+				}
+
+				BeforeEach(func() {
+					protocol.SupportedVersions = versions
+					client = &http.Client{
+						Transport: &http3.RoundTripper{
+							TLSClientConfig: &tls.Config{
+								RootCAs: testdata.GetRootCA(),
+							},
+							DisableCompression: true,
+							QuicConfig: getQuicConfig(&quic.Config{
+								Versions:       []protocol.VersionNumber{ver},
+								MaxIdleTimeout: 10 * time.Second,
+							}),
+						},
+					}
+					server.QuicConfig.Versions = versions
+				})
+
+				AfterEach(func() {
+					protocol.SupportedVersions = origSupportedVersions
+				})
+
+				It("selects the right ALPN value", func() {
+					resp, err := client.Get("https://localhost:" + port + "/hello")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(resp.StatusCode).To(Equal(200))
+					Expect(resp.TLS.NegotiatedProtocol).To(Equal(alpn))
+					body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 3*time.Second))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(string(body)).To(Equal("Hello, World!\n"))
+				})
+
+				It("selects the right ALPN value, when the server uses the GetConfigForClient callback", func() {
+					server.TLSConfig.GetConfigForClient = func(chi *tls.ClientHelloInfo) (*tls.Config, error) {
+						qconn, ok := chi.Conn.(handshake.ConnWithVersion)
+						Expect(ok).To(BeTrue())
+						Expect(qconn.GetQUICVersion()).To(Equal(ver))
+						return testdata.GetTLSConfig(), nil
+					}
+					resp, err := client.Get("https://localhost:" + port + "/hello")
+					Expect(err).ToNot(HaveOccurred())
+					Expect(resp.StatusCode).To(Equal(200))
+					Expect(resp.TLS.NegotiatedProtocol).To(Equal(alpn))
+					body, err := ioutil.ReadAll(gbytes.TimeoutReader(resp.Body, 3*time.Second))
+					Expect(err).ToNot(HaveOccurred())
+					Expect(string(body)).To(Equal("Hello, World!\n"))
+				})
+			})
+		}
 	})
 
 	for _, v := range versions {
